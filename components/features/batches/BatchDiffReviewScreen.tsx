@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import BatchDiffView from "@/components/features/batches/BatchDiffView";
+import DraftComparisonView from "@/components/features/drafts/DraftComparisonView";
 import {
   BATCH_DIFF_FIXTURES,
   getBatchDiffFixture,
@@ -14,15 +14,37 @@ import {
  */
 export function BatchDiffReviewScreen() {
   const [fixtureKey, setFixtureKey] = useState(BATCH_DIFF_FIXTURES[0].key);
-  const fixture = getBatchDiffFixture(fixtureKey);
+  const hasCurrentDraft = fixtureKey !== "missing-current";
+  const fixture = getBatchDiffFixture(
+    hasCurrentDraft ? fixtureKey : BATCH_DIFF_FIXTURES[0].key,
+  );
+
+  const request = {
+    payrollRunId: "payroll-review-fixture",
+    current: hasCurrentDraft
+      ? {
+          revisionId: `${fixture.key}-current`,
+          payrollRunId: "payroll-review-fixture",
+          revisionNumber: 2,
+          rows: fixture.currentRows,
+        }
+      : null,
+    approved: {
+      revisionId: `${fixture.key}-approved`,
+      payrollRunId: "payroll-review-fixture",
+      revisionNumber: 1,
+      rows: fixture.approvedRows,
+    },
+  };
 
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-lg shadow-sm p-6">
-        <h2 className="text-lg font-semibold text-gray-900">Payroll review</h2>
+        <h2 className="text-lg font-semibold text-gray-900">Draft comparison</h2>
         <p className="text-sm text-gray-600 mt-1">
-          Compare the current payroll draft with the previously approved draft before
-          signing. Private salary values stay redacted by default.
+          Compare a payroll draft revision with its approved version before review.
+          Salary values stay redacted by default. Scenarios below are QA fixtures, not
+          live approval-queue data.
         </p>
         <div className="mt-4">
           <label htmlFor="diff-fixture-select" className="block text-sm font-medium text-gray-700 mb-2">
@@ -39,16 +61,13 @@ export function BatchDiffReviewScreen() {
                 {f.label}
               </option>
             ))}
+            <option value="missing-current">Current version unavailable</option>
           </select>
-          <p className="mt-2 text-xs text-gray-500">{fixture.description}</p>
+          {hasCurrentDraft && <p className="mt-2 text-xs text-gray-500">{fixture.description}</p>}
         </div>
       </div>
 
-      <BatchDiffView
-        currentRows={fixture.currentRows}
-        approvedRows={fixture.approvedRows}
-        title="Draft vs previously approved batch"
-      />
+      <DraftComparisonView request={request} />
     </div>
   );
 }

@@ -11,6 +11,7 @@ import {
 } from "@/lib/payroll/batchDiff";
 import { BATCH_DIFF_FIXTURES, getBatchDiffFixture } from "@/lib/payroll/batchDiffFixtures";
 import BatchDiffView from "@/components/features/batches/BatchDiffView";
+import DraftComparisonView from "@/components/features/drafts/DraftComparisonView";
 
 const WALLET_A = "GDQP2KPQGKIHYJGXNUIYOMHARUARCA7DJT5FO2FFOOKY3B2WSQHG4W37";
 const WALLET_B = "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN";
@@ -216,5 +217,60 @@ describe("BatchDiffView component", () => {
     const rowEl = screen.getByTestId("diff-row");
     expect(within(rowEl).getByText(/^GAAZI4/)).toBeInTheDocument();
     expect(within(rowEl).getByText(/^GDQP2K/)).toBeInTheDocument();
+  });
+});
+
+describe("DraftComparisonView", () => {
+  const fixture = getBatchDiffFixture("additions");
+
+  it("renders revision summary and added, removed, and updated entries", () => {
+    const approvedRows = [
+      row(),
+      row({ employeeId: "emp_removed", salaryCommitment: "0xremoved" }),
+      row({ employeeId: "emp_updated", salaryCommitment: "0xbefore" }),
+    ];
+    const currentRows = [
+      row(),
+      row({ employeeId: "emp_added" }),
+      row({ employeeId: "emp_updated", salaryCommitment: "0xafter" }),
+    ];
+
+    render(
+      <DraftComparisonView
+        request={{
+          payrollRunId: "run-1",
+          current: { revisionId: "rev-2", payrollRunId: "run-1", revisionNumber: 2, rows: currentRows },
+          approved: { revisionId: "rev-1", payrollRunId: "run-1", revisionNumber: 1, rows: approvedRows },
+        }}
+      />,
+    );
+
+    expect(screen.getByText(/Revision rev-2 compared with approved revision rev-1/)).toBeInTheDocument();
+    expect(screen.getByTestId("comparison-additions")).toHaveTextContent("1");
+    expect(screen.getByTestId("comparison-removals")).toHaveTextContent("1");
+    expect(screen.getByTestId("comparison-edits")).toHaveTextContent("1");
+    expect(screen.getAllByText(REDACTED_PLACEHOLDER).length).toBeGreaterThan(0);
+  });
+
+  it("explains a missing current version without rendering an empty comparison", () => {
+    render(
+      <DraftComparisonView
+        request={{
+          payrollRunId: "run-1",
+          current: null,
+          approved: {
+            revisionId: "rev-1",
+            payrollRunId: "run-1",
+            revisionNumber: 1,
+            rows: fixture.approvedRows,
+          },
+        }}
+      />
+    );
+
+    expect(screen.getByTestId("draft-comparison-unavailable")).toHaveTextContent(
+      "current draft revision is missing",
+    );
+    expect(screen.queryByTestId("batch-diff-view")).not.toBeInTheDocument();
   });
 });
