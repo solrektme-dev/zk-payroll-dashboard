@@ -20,8 +20,8 @@ const KNOWN_BATCH_REFERENCES = [...MOCK_PAYROLL_RUNS.map((r) => r.id), "BATCH-20
  * Payroll operator permission model.
  *
  * The dashboard must validate that the current operator holds the
- * `create:payroll` permission before allowing a draft batch to be
- * created. This is a privacy-aware gate: we only expose the operator's
+ * `create:payroll` permission before allowing a draft batch to
+ * be created. This is a privacy-aware gate: we only expose the operator's
  * role label and the missing permission, never salary or amount data.
  */
 export type PayrollPermission = "create:payroll" | "view:payroll" | "approve:payroll";
@@ -115,6 +115,42 @@ export const DEFAULT_PAYROLL_OPERATOR: PayrollOperator = {
   permissions: [],
 };
 
+/**
+ * Sensitive diagnostic redaction.
+ *
+ * The developer diagnostic panel on this page renders raw input values.
+ * Raw inputs can contain sensitive data (account numbers, emails,
+ * token-like strings, long numeric amounts). This helper redacts those
+ * patterns before they are rendered so diagnostic copy never leaks sensitive values to the screen, logs, or screenshots.
+ */
+export interface RedactionResult {
+  redacted: string;
+  wasRedacted: boolean;
+}
+
+const REDACTED_PLACEHOLDER = "[redacted]";
+
+// Email addresses (e.g. payroll@example.com)
+const EMAIL_PATTERN = /[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}/g;
+// Long digit sequences (account numbers, wallet ids, amounts)
+const LONG_DIGITS_PATTERN = /\d(?:[\s\-]?\d){3,}/g;
+// Token-like strings (API keys, secrets, hashes)
+const TOKEN_PATTERN = /[a-zA-Z0-9_\-]{24,}/g;
+
+export function redactSensitiveDiagnosticValue(value: string | null | undefined): RedactionResult {
+  if (value == null || value === "") {
+    return { redacted: "", wasRedacted: false };
+  }
+
+  const original = String(value);
+  const redacted = original
+    .replace(EMAIL_PATTERN, REDACTED_PLACEHOLDER)
+    .replace(LONG_DIGITS_PATTERN, REDACTED_PLACEHOLDER)
+    .replace(TOKEN_PATTERN, REDACTED_PLACEHOLDER);
+
+  return { redacted, wasRedacted: redacted !== original };
+}
+
 export default function PayrollCreatePage() {
   const [assetRaw, setAssetRaw] = useState("");
   const [batchRef, setBatchRef] = useState("");
@@ -184,6 +220,13 @@ export default function PayrollCreatePage() {
     [description],
   );
 
+  // Redact sensitive patterns before rendering the diagnostic panel.
+  const assetDiagnostic = redactSensitiveDiagnosticValue(assetRaw);
+  const batchDiagnostic = redactSensitiveDiagnosticValue(batchRef);
+  const descriptionDiagnostic = redactSensitiveDiagnosticValue(description);
+  const hasRedaction =
+    assetDiagnostic.wasRedacted || batchDiagnostic.wasRedacted || descriptionDiagnostic.wasRedacted;
+
   return (
     <DashboardLayout>
       <div className="max-w-2xl mx-auto space-y-6">
@@ -205,7 +248,7 @@ export default function PayrollCreatePage() {
               <>
                 <UserCheck className="w-4 h-4 text-green-600" />
                 <span className="text-gray-700">
-                  Operator: <span className="font-medium">{operator.name || operator.id}</span> (<span className="font-mono">{operator.role}</span>) — authorized to create payroll batches.
+                  Operator: <span className="font-medium">{operator.name || operator.id}</span> ({operator.role}) — authorized to create payroll batches.
                 </span>
               </>
             ) : (
@@ -252,70 +295,46 @@ export default function PayrollCreatePage() {
 
           <div className="rounded-lg bg-gray-50 border p-3 text-xs text-gray-600">
             <p className="font-medium text-gray-700 mb-1 flex items-center gap-1">
-              <Shield className="w-3.5 h-3.5" /> Privacy & validation
+              <Shield className="w-3.5 h-3.5" /> Privacy &amp; validation
             </p>
-<p>Asset raw: <span className="font-mono">{assetRaw || "—"}</span> → <span className="font-mono font-medium">{result.normalized || "—"}</span> {result.isValid ? "✓" : `x● ${result.validationError}`} {result.wasNormalized && <span className="text-amber-700">(trimmed/uppercased)</span>}</p>
-            <p>Batch ref: <span className="font-mono">{batchRef || "—"}</span> → <span className="font-mono font-medium">{batchValidation.normalized || "—"}</span> {batchValidation.isValid ? "✓ valid" : `x● ${batchValidation.message}`}</p>
-            <p>Description: <span className="font-mono">{description || "—"}</span> {descriptionValidation.isValid ? "✓ valid" : `● ${descriptionValidation.message}`}</p>
-            <p className="text-gray-500 mt-1">Helper copy is shown under each field. Duplicates like <span className="font-mono">BATCH-2025-001</span> or <span className="font-mono">tx_001</span> are flagged before submission.</p>
-            {result.wasNormalized && <p className="text-amber-700 mt-1">Asset warning shown: symbol will be normalized before submission.</p>}
+            <p>Asset raw: <span className="font-mono">{assetDiagnostic.redacted || "—"}</span> → <span className="font-mono font-medium">{result.normalized || "—"}</span> {result.isValid ? "✓" : `x● ${result.validationError}`} {result.wasNormalized && <span className="text-amber-700">(normalized)</span>}</p>
+            <p>Batch ref: <span className="font-mono">{batchDiagnostic.redacted || "—"}</span> → <span className="font-mono font-medium">{batchValidation.normalized || "—"}</span> {batchValidation.isValid ? "✓ no duplicate" : `x● ${batchValidation.message}`}</p>
+            <p>Description: <span className="font-mono">{descriptionDiagnostic.redacted || "—"}</span> {descriptionValidation.isValid ? "✓ no sensitive data" : `x● <span className="text-red-700">{descriptionValidation.message}</span>`}</p>
+            {hasRedaction && (
+              <p className="text-amber-700 mt-1">
+                Sensitive values are redacted in this diagnostic view.
+              </p>
+            )}
           </div>
 
           {error && (
-            <div role="alert" data-testid="payroll-create-error" className="rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">
+            <div role="alert" className="bg-red-50 border border-red-300 rounded-lg p-3 text-sm text-red-700">
               {error}
             </div>
           )}
 
-          {submitted && (
-            <div
-              data-testid="payroll-create-success"
-              role="status"
-              className="rounded-md bg-green-50 border border-green-200 p-3 text-sm text-green-800"
-            >
-              Payroll batch draft created for asset <span className="font-mono font-semibold">{submitted.asset}</span> with reference <span className="font-mono font-semibold">{submitted.batchRef}</span>. Normalized values will be used for on-chain submission.
-            </div>
-          )}
-
-          <div className="flex gap-3">
-            <button
-              type="submit"
-              disabled={!permissionCheck.allowed || isMutationDisabled}
-              aria-disabled={!permissionCheck.allowed || isMutationDisabled}
-              title={isMutationDisabled ? "Disabled: Payroll contracts are paused" : undefined}
-              className="px-4 py-2 rounded-md bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              data-testid="payroll-create-submit"
-            >
-              Create draft batch
-            </button>
-            <Link
-              href="/payroll/drafts"
-              className="px-4 py-2 rounded-md border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50"
-            >
-              View drafts
-            </Link>
-          </div>
-
-          <div className="pt-4 border-t text-xs text-gray-500">
-            <h3 className="font-semibold text-gray-700">QA steps</h3>
-            <ul className="list-disc pl-5 mt-1 space-y-1">
-<li>Permission success: an operator with the <span className="font-mono">create:payroll</span> permission sees the green authorized banner and can submit.</li>
-              <li>Permission failure: a <span className="font-mono">viewer</span> or <span className="font-mono">guest</span> operator sees an actionable denied message and the submit button is disabled.</li>
-              <li>Permission edge: an operator with an unknown role or missing id gets a clear error instead of a silent failure.</li>
-              <li>Asset success: entering &quot; usdc &quot; shows warning &quot;Symbol was trimmed...&quot; and submits as &quot;USDC&quot;.</li>
-              <li>Asset failure: entering &quot;!!!&quot; shows validation error &quot;must be 1-12 alphanumeric&quot;.</li>
-              <li>Asset edge: entering &quot;TEST 123&quot; removes spaces and warns &quot;Spaces were removed&quot;.</li>
-              <li>Batch ref success: entering &quot;BATCH-2025-042&quot; shows helper &quot;3″32 characters...&quot; and submits as-same with ✓.</li>
-              <li>Batch ref failure (malformed): entering &quot;!!&quot; or &quot;a&quot; shows &quot;at least 3 characters&quot; / &quot;Invalid batch reference&quot;.</li>
-              <li>Batch ref failure (duplicate): entering &quot;BATCH-2025-001&quot; or &quot;tx_001&quot; shows &quot;already in use&quot; — duplicate guidance.</li>
-              <li>Batch ref edge: pasting &quot; BATCH 2025 001 &quot; trims whitespace before validation; lowercase &quot;batch-2025-001&quot; flagged as duplicate of existing uppercase variant.</li>
-              <li>Description success: entering a valid string doesn&apos;t show any error.</li>
-              <li>Description failure (PII): entering &quot;$5000&quot; shows warning about financial figures.</li>
-              <li>Description failure (length): entering more than 255 chars shows length error.</li>
-              <li>Privacy: no salary or amount is logged or displayed here — only asset codes, reference IDs, and operator role labels.</li>
-            </ul>
-          </div>
+          <button
+            type="submit"
+            disabled={!permissionCheck.allowed || isMutationDisabled}
+            className="w-full inline-flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Create Draft Batch
+          </button>
         </form>
+
+        {submitted && (
+          <div data-testid="payroll-draft-created" className="bg-green-50 border border-green-300 rounded-lg p-4 text-sm text-green-900">
+            <p className="font-medium">Draft batch created</p>
+            <p>Asset: <span className="font-mono">{submitted.asset}</span></p>
+            <p>Batch reference: <span className="font-mono">{submitted.batchRef}</span></p>
+          </div>
+        )}
+
+        <p className="text-xs text-gray-500">
+          <Link href="/payroll" className="text-indigo-600 hover:underline">
+            Back to payroll
+          </Link>
+        </p>
       </div>
     </DashboardLayout>
   );
