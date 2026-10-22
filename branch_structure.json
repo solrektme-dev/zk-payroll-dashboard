@@ -1,0 +1,21 @@
+{
+  "default_branch": "dev",
+  "branches": [
+    "dev",
+    "feat/issue-731-create-dashboard-sensitive-diagnostic-data",
+    "feat/issue-741-create-dashboard-exception-case-ownership",
+    "origin"
+  ],
+  "parent": {
+    "dev": null,
+    "feat/issue-731-create-dashboard-sensitive-diagnostic-data": "dev",
+    "feat/issue-741-create-dashboard-exception-case-ownership": "dev",
+    "origin": "dev"
+  },
+  "order": [
+    "dev",
+    "feat/issue-731-create-dashboard-sensitive-diagnostic-data",
+    "feat/issue-741-create-dashboard-exception-case-ownership",
+    "origin"
+  ]
+}
